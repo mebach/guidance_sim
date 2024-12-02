@@ -2,6 +2,8 @@ import numpy as np
 from numpy.linalg import norm
 import matplotlib.pyplot as plt
 
+zeroarray = np.array([0.0, 0.0, 0.0])
+
 
 def main():
     xmis = np.array([0.0, 0.0, 10000.0])
@@ -11,7 +13,7 @@ def main():
     xdottgt = np.array([300.0, 0.0, 0.0])
 
     # constant g target maneuver
-    xddottgt = np.array([0.0, 0.0, 30.0]) # 0g
+    xddottgt = np.array([0.0, 0.0, 0.0]) # 3g
 
     xdotmis = 4.0 * norm(xdottgt) * xdotmis / norm(xdotmis) # normalize missile velocity and then multiply by some relative missile speed to target.
     # print(xdotmis)
@@ -30,12 +32,11 @@ def main():
 
     dt = 0.001
     t = 0
-    tgo = 0
     rdot = -1 # some initial negative number
     range_current = norm(xtgt - xmis)
     range_prev = norm(xtgt - xmis) + 1
 
-    # simulation
+    # main simulation loop
     while range_current - range_prev < 0:
 
         range_prev = range_current
@@ -48,8 +49,10 @@ def main():
         xtgt_zhist.append(xtgt[2])
         t_hist.append(t)
 
-        xddotmis = pronav(xmis, xdotmis, xtgt, xdottgt)
-        accel_hist.append(xddotmis[0])
+        # xddotmis = pronav(xmis, xdotmis, xtgt, xdottgt)
+        xddotmis = pronav(xmis, xdotmis, xtgt, xdottgt, 'pronav')
+        # print(norm(xddotmis))
+        accel_hist.append(norm(xddotmis))
 
         xdotmis = xdotmis + xddotmis * dt
 
@@ -82,6 +85,9 @@ def main():
 
     input("Press Enter to Continue...")
 
+    # plt.plot(t_hist, accel_hist)
+    # plt.show()
+
     # plt.subplot(2,2,2)
     # plt.plot(xmis_xhist, xmis_yhist, 'b-')
     # plt.plot(xtgt_xhist, xtgt_yhist, 'r--')
@@ -89,43 +95,59 @@ def main():
     # plt.plot(xmis_yhist, xmis_zhist, 'b-')
     # plt.plot(xtgt_yhist, xtgt_zhist, 'r--')
 
+def pronav(missile_pos, missile_vel, target_pos, target_vel, law):
+  
+  if law == 'pronav':
+    N = 4
 
-# calculate guidance commands
-def pronav(xmis, xdotmis, xtgt, xdottgt):
+    Rtm = target_pos - missile_pos
+    Rtm_hor = Rtm[0:2]
+    Rtm1 = Rtm[0]
+    Rtm2 = Rtm[1]
+    Rtm3 = Rtm[2]
 
-  N = 3
+    Vtm = target_vel - missile_vel
+    Vtm_hor = Vtm[0:2]
+    Vtm1 = Vtm[0]
+    Vtm2 = Vtm[1]
+    Vtm3 = Vtm[2]
 
-  Rtm = xtgt - xmis
-  Rtm_hor = Rtm[0:2]
-  Rtm1 = Rtm[0]
-  Rtm2 = Rtm[1]
-  Rtm3 = Rtm[2]
+    uvRtm = Rtm / norm(Rtm)
+    uvVm = missile_vel / norm(missile_vel)
+    uvVtm = Vtm / norm(Vtm)
+    
+    i = np.array([1.0, 0.0, 0.0])
 
-  Vtm = xdottgt - xdotmis
-  Vtm_hor = Vtm[0:2]
-  Vtm1 = Vtm[0]
-  Vtm2 = Vtm[1]
-  Vtm3 = Vtm[2]
+    lam = np.arccos( np.dot(uvRtm, uvVm) )
+    lambdadot = - 1 / np.sin(lam) * np.dot(uvVtm, uvVm)
 
-  uvRtm = Rtm / norm(Rtm)
-  uvVm = xdotmis / norm(xdotmis)
-  uvVtm = Vtm / norm(Vtm)
+    Vc = - ( Rtm1 * Vtm1 + Rtm2*Vtm2 + Rtm3*Vtm3 ) / ( norm(Rtm) ) # rdot
 
-  lam = np.arccos( np.dot(uvRtm, uvVm) )
-  lambdadot = - 1 / np.sin(lam) * np.dot(uvVtm, uvVm)
+    nc = N * Vc * lambdadot
+    # nc = saturate(nc)
 
-  Vc = - ( Rtm1 * Vtm1 + Rtm2*Vtm2 + Rtm3*Vtm3 ) / ( norm(Rtm) )
+    tgo = norm(Rtm) / Vc
+    # print(tgo)
 
-  nc = N * Vc * lambdadot
+    pip = target_pos + target_vel * tgo
 
-  turn_vector = np.cross(uvVm, uvRtm)
-  steering_vector = np.cross(turn_vector, uvVm)
+    vrMtPip = pip - missile_pos
+    uvMtPip = vrMtPip / norm(vrMtPip)
+
+    turn_vector = np.cross(uvVm, uvMtPip)
+    steering_vector = np.cross(turn_vector, uvVm)
+
+    # print(nc)
 
 
-  return nc * steering_vector
+  return nc * ( steering_vector )
 
-def aug_pronav(xmis, xdotmis, xtgt, xdottgt):
-  return
+def saturate(command):
+  
+  if abs(command) > 1000.0:
+    command = np.sign(command) * 1000.0
+
+  return command
 
 
 
